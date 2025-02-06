@@ -16,6 +16,11 @@ public class ScheduledTasks {
 
     @Scheduled(fixedRate = 5_000)
     public void reportCurrentTime() throws IOException {
-        System.out.println(executor.healthCheck());
+        boolean healthCheck = executor.healthCheck();
+        if (healthCheck) {
+            System.out.println("Elasticsearch is healthy");
+        } else {
+            System.out.println("Elasticsearch isn't healthy");
+        }
     }
 }

@@ -27,6 +27,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-elasticsearch'
     implementation 'co.elastic.clients:elasticsearch-java:8.17.1'
     implementation 'org.apache.commons:commons-lang3:3.17.0'
+    implementation 'net.datafaker:datafaker:2.4.2'
 
     compileOnly 'org.projectlombok:lombok'
 

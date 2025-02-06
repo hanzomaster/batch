@@ -5,6 +5,7 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.datafaker.Faker;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StopWatch;
 import thinkmath.com.batch.dto.QueryResult;
@@ -14,7 +15,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -25,6 +25,7 @@ public class ElasticsearchExecutor {
     private final ElasticsearchService client;
     private final ExecutorService executorService =
             Executors.newFixedThreadPool(QueryBuilder.NUMBER_OF_SLICES * QueryBuilder.NUMBER_OF_SLICES);
+    private final Faker faker = new Faker();
 
     public boolean healthCheck() throws IOException {
         return client.healthCheck();
@@ -35,7 +36,7 @@ public class ElasticsearchExecutor {
         String eventPitId = null;
         try {
             clientPitId = client.openPointInTime(QueryBuilder.CLIENT_INDEX);
-            eventPitId = client.openPointInTime(QueryBuilder.CLIENT_INDEX);
+            eventPitId = client.openPointInTime(QueryBuilder.EVENT_INDEX);
             List<CompletableFuture<List<String>>> allEventsFutures = new ArrayList<>();
 
             // Execute first level queries and immediately process their results
@@ -45,12 +46,21 @@ public class ElasticsearchExecutor {
                 String finalEventPitId = eventPitId;
                 CompletableFuture.supplyAsync(
                                 () -> {
-                                    try {
-                                        return client.executeClientsQuery(
-                                                finalClientPitId, clientCurrentSlice, QueryBuilder.NUMBER_OF_SLICES);
-                                    } catch (IOException e) {
-                                        throw new CompletionException(e);
+                                    //                                    try {
+                                    //                                        return client.executeClientsQuery(
+                                    //                                                finalClientPitId,
+                                    // clientCurrentSlice, QueryBuilder.NUMBER_OF_SLICES);
+                                    //                                    } catch (IOException e) {
+                                    //                                        throw new CompletionException(e);
+                                    //                                    }
+                                    List<String> clientIds = new ArrayList<>();
+                                    int listLength = faker.random().nextInt(1, 10);
+                                    for (int j = 0; j < listLength; j++) {
+                                        String digits = faker.number().digits(6);
+                                        System.out.println(digits);
+                                        clientIds.add(digits);
                                     }
+                                    return clientIds;
                                 },
                                 executorService)
                         .thenAccept(clientIds -> {
@@ -58,15 +68,26 @@ public class ElasticsearchExecutor {
                                 int eventCurrentSlice = j;
                                 CompletableFuture<List<String>> secondLevelFuture = CompletableFuture.supplyAsync(
                                         () -> {
-                                            try {
-                                                return client.executeEventsQuery(
-                                                        finalEventPitId,
-                                                        clientIds,
-                                                        eventCurrentSlice,
-                                                        QueryBuilder.NUMBER_OF_SLICES);
-                                            } catch (IOException e) {
-                                                throw new CompletionException(e);
+                                            //                                            try {
+                                            //                                                return
+                                            // client.executeEventsQuery(
+                                            //                                                        finalEventPitId,
+                                            //                                                        clientIds,
+                                            //                                                        eventCurrentSlice,
+                                            //
+                                            // QueryBuilder.NUMBER_OF_SLICES);
+                                            //                                            } catch (IOException e) {
+                                            //                                                throw new
+                                            // CompletionException(e);
+                                            //                                            }
+                                            List<String> newClientIds = new ArrayList<>();
+                                            int listLength = faker.random().nextInt(1, 10);
+                                            for (int k = 0; k < listLength; k++) {
+                                                String digits = faker.number().digits(6);
+                                                System.out.println(digits);
+                                                newClientIds.add(digits);
                                             }
+                                            return newClientIds;
                                         },
                                         executorService);
 
