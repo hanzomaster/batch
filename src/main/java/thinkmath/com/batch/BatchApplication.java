@@ -5,7 +5,10 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.util.StopWatch;
 import thinkmath.com.batch.util.ElasticsearchExecutor;
+
+import java.util.List;
 
 @RequiredArgsConstructor
 @SpringBootApplication
@@ -24,5 +27,14 @@ public class BatchApplication implements CommandLineRunner {
      * @throws Exception on error
      */
     @Override
-    public void run(String... args) throws Exception {}
+    public void run(String... args) throws Exception {
+        StopWatch stopWatch = new StopWatch();
+        stopWatch.start();
+        List<String> queryResult = executor.executeNestedSlicedQueries();
+        stopWatch.stop();
+        long time = stopWatch.getTotalTimeMillis();
+
+        System.out.println("Total time: " + time + "ms");
+        System.out.println("Total results: " + queryResult.size());
+    }
 }

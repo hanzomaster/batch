@@ -1,11 +1,13 @@
 package thinkmath.com.batch.util;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.Time;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.OpenPointInTimeResponse;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.endpoints.BooleanResponse;
@@ -25,7 +27,10 @@ import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Component
 public class ElasticsearchService implements AutoCloseable {
@@ -33,7 +38,6 @@ public class ElasticsearchService implements AutoCloseable {
     private final ElasticsearchClient client;
 
     public ElasticsearchService() {
-        // Create REST client
         RestClient restClient = RestClient.builder(new HttpHost("127.0.0.1", 9200, "https"))
                 .setHttpClientConfigCallback(httpAsyncClientBuilder -> {
                     try {
@@ -103,10 +107,6 @@ public class ElasticsearchService implements AutoCloseable {
         }
     }
 
-    public SearchResponse<Map> queryWithPit(SearchRequest query) throws IOException {
-        return client.search(query, Map.class);
-    }
-
     public String openPointInTime(String index) throws IOException {
         OpenPointInTimeResponse openPointInTimeResponse =
                 client.openPointInTime(b -> b.index(index).keepAlive(KEEP_ALIVE));
@@ -120,5 +120,72 @@ public class ElasticsearchService implements AutoCloseable {
     @Override
     public void close() throws Exception {
         client.close();
+    }
+
+    public List<String> executeClientsQuery(String clientPitId, int currentSlice, int numberOfSlices)
+            throws IOException {
+        Query query = QueryBuilder.buildClientQuery();
+        List<FieldValue> searchAfter = null;
+        List<String> resultIds = new ArrayList<>();
+
+        while (true) {
+            SearchRequest.Builder builder = new SearchRequest.Builder()
+                    .pit(pit -> pit.id(clientPitId).keepAlive(KEEP_ALIVE))
+                    .slice(s -> s.id(String.valueOf(currentSlice)).max(numberOfSlices))
+                    .size(QueryBuilder.BATCH_SIZE)
+                    .query(query)
+                    .source(source -> source.filter(
+                            filter -> filter.includes(QueryBuilder.CLIENT_ID, "attributes.a_created_date")))
+                    .sort(sort -> sort.field(field -> field.field("attributes.a_created_date")));
+            if (searchAfter != null) builder = builder.searchAfter(searchAfter);
+
+            SearchRequest searchRequest = builder.build();
+            SearchResponse<Map> response = queryWithPit(searchRequest);
+            List<Hit<Map>> hits = response.hits().hits();
+            if (hits.isEmpty()) break;
+
+            resultIds.addAll(hits.stream()
+                    .map(h -> ((String) Objects.requireNonNull(h.source()).get("client_id")))
+                    .toList());
+
+            searchAfter = hits.get(hits.size() - 1).sort();
+        }
+
+        return resultIds;
+    }
+
+    private SearchResponse<Map> queryWithPit(SearchRequest query) throws IOException {
+        return client.search(query, Map.class);
+    }
+
+    public List<String> executeEventsQuery(
+            String eventPitId, List<String> clientIds, int currentSlice, int numberOfSlices) throws IOException {
+        Query query = QueryBuilder.buildEventQuery(clientIds);
+        List<FieldValue> searchAfter = null;
+        List<String> resultIds = new ArrayList<>();
+
+        while (true) {
+            SearchRequest.Builder builder = new SearchRequest.Builder()
+                    .pit(pit -> pit.id(eventPitId).keepAlive(KEEP_ALIVE))
+                    .slice(s -> s.id(String.valueOf(currentSlice)).max(numberOfSlices))
+                    .size(QueryBuilder.BATCH_SIZE)
+                    .query(query)
+                    .source(source -> source.filter(filter -> filter.includes(QueryBuilder.CLIENT_ID, "@timestamp")))
+                    .sort(sort -> sort.field(field -> field.field("@timestamp")));
+            if (searchAfter != null) builder = builder.searchAfter(searchAfter);
+
+            SearchRequest searchRequest = builder.build();
+            SearchResponse<Map> response = queryWithPit(searchRequest);
+            List<Hit<Map>> hits = response.hits().hits();
+            if (hits.isEmpty()) break;
+
+            resultIds.addAll(hits.stream()
+                    .map(h -> ((String) Objects.requireNonNull(h.source()).get("client_id")))
+                    .toList());
+
+            searchAfter = hits.get(hits.size() - 1).sort();
+        }
+
+        return resultIds;
     }
 }
