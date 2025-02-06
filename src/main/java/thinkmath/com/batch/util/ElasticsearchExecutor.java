@@ -39,13 +39,14 @@ public class ElasticsearchExecutor {
             clientPitId = client.openPointInTime(QueryBuilder.CLIENT_INDEX);
             eventPitId = client.openPointInTime(QueryBuilder.EVENT_INDEX);
             List<CompletableFuture<List<String>>> allEventsFutures = new ArrayList<>();
+            List<CompletableFuture<Void>> allClientsFutures = new ArrayList<>();
 
             // Execute first level queries and immediately process their results
             for (int i = 0; i < QueryBuilder.NUMBER_OF_SLICES; i++) {
                 int clientCurrentSlice = i;
                 String finalClientPitId = clientPitId;
                 String finalEventPitId = eventPitId;
-                CompletableFuture.supplyAsync(
+                CompletableFuture<Void> clientFuture = CompletableFuture.supplyAsync(
                                 () -> {
                                     try {
                                         return client.executeClientsQuery(
@@ -99,15 +100,17 @@ public class ElasticsearchExecutor {
                                 }
                             }
                         });
+                allClientsFutures.add(clientFuture);
             }
-
-            Thread.sleep(200);
+            CompletableFuture.allOf(allClientsFutures.toArray(new CompletableFuture[0]))
+                    .join();
 
             CompletableFuture<List<String>> finalResults = CompletableFuture.allOf(
                             allEventsFutures.toArray(new CompletableFuture[0]))
                     .thenApply(v -> allEventsFutures.stream()
                             .map(CompletableFuture::join)
                             .flatMap(List::stream)
+                            .distinct()
                             .toList());
 
             return finalResults.join();
