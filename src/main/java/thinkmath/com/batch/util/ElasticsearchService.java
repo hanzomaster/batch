@@ -12,6 +12,7 @@ import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.endpoints.BooleanResponse;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -32,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+@Slf4j
 @Component
 public class ElasticsearchService implements AutoCloseable {
     public static final Time KEEP_ALIVE = new Time.Builder().time("1m").build();
@@ -124,6 +126,11 @@ public class ElasticsearchService implements AutoCloseable {
 
     public List<String> executeClientsQuery(String clientPitId, int currentSlice, int numberOfSlices)
             throws IOException {
+        log.info(
+                "Running client {} slice on total of {} slices with PIT: {}",
+                currentSlice,
+                numberOfSlices,
+                clientPitId);
         Query query = QueryBuilder.buildClientQuery();
         List<FieldValue> searchAfter = null;
         List<String> resultIds = new ArrayList<>();
@@ -160,6 +167,7 @@ public class ElasticsearchService implements AutoCloseable {
 
     public List<String> executeEventsQuery(
             String eventPitId, List<String> clientIds, int currentSlice, int numberOfSlices) throws IOException {
+        log.info("Running event {} slice on total of {} slices with PIT: {}", currentSlice, numberOfSlices, eventPitId);
         Query query = QueryBuilder.buildEventQuery(clientIds);
         List<FieldValue> searchAfter = null;
         List<String> resultIds = new ArrayList<>();

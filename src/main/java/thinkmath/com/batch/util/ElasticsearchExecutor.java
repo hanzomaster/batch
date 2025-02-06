@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -46,21 +47,21 @@ public class ElasticsearchExecutor {
                 String finalEventPitId = eventPitId;
                 CompletableFuture.supplyAsync(
                                 () -> {
-                                    //                                    try {
-                                    //                                        return client.executeClientsQuery(
-                                    //                                                finalClientPitId,
-                                    // clientCurrentSlice, QueryBuilder.NUMBER_OF_SLICES);
-                                    //                                    } catch (IOException e) {
-                                    //                                        throw new CompletionException(e);
-                                    //                                    }
-                                    List<String> clientIds = new ArrayList<>();
-                                    int listLength = faker.random().nextInt(1, 10);
-                                    for (int j = 0; j < listLength; j++) {
-                                        String digits = faker.number().digits(6);
-                                        System.out.println(digits);
-                                        clientIds.add(digits);
+                                    try {
+                                        return client.executeClientsQuery(
+                                                finalClientPitId, clientCurrentSlice, QueryBuilder.NUMBER_OF_SLICES);
+                                    } catch (IOException e) {
+                                        throw new CompletionException(e);
                                     }
-                                    return clientIds;
+                                    //                                    List<String> clientIds = new ArrayList<>();
+                                    //                                    int listLength = faker.random().nextInt(1,
+                                    // 10);
+                                    //                                    for (int j = 0; j < listLength; j++) {
+                                    //                                        String digits = faker.number().digits(6);
+                                    //                                        System.out.println(digits);
+                                    //                                        clientIds.add(digits);
+                                    //                                    }
+                                    //                                    return clientIds;
                                 },
                                 executorService)
                         .thenAccept(clientIds -> {
@@ -68,26 +69,28 @@ public class ElasticsearchExecutor {
                                 int eventCurrentSlice = j;
                                 CompletableFuture<List<String>> secondLevelFuture = CompletableFuture.supplyAsync(
                                         () -> {
-                                            //                                            try {
-                                            //                                                return
-                                            // client.executeEventsQuery(
-                                            //                                                        finalEventPitId,
-                                            //                                                        clientIds,
-                                            //                                                        eventCurrentSlice,
-                                            //
-                                            // QueryBuilder.NUMBER_OF_SLICES);
-                                            //                                            } catch (IOException e) {
-                                            //                                                throw new
-                                            // CompletionException(e);
-                                            //                                            }
-                                            List<String> newClientIds = new ArrayList<>();
-                                            int listLength = faker.random().nextInt(1, 10);
-                                            for (int k = 0; k < listLength; k++) {
-                                                String digits = faker.number().digits(6);
-                                                System.out.println(digits);
-                                                newClientIds.add(digits);
+                                            try {
+                                                return client.executeEventsQuery(
+                                                        finalEventPitId,
+                                                        clientIds,
+                                                        eventCurrentSlice,
+                                                        QueryBuilder.NUMBER_OF_SLICES);
+                                            } catch (IOException e) {
+                                                throw new CompletionException(e);
                                             }
-                                            return newClientIds;
+                                            //                                            List<String> newClientIds =
+                                            // new ArrayList<>();
+                                            //                                            int listLength =
+                                            // faker.random().nextInt(1, 10);
+                                            //                                            for (int k = 0; k <
+                                            // listLength; k++) {
+                                            //                                                String digits =
+                                            // faker.number().digits(6);
+                                            //
+                                            // System.out.println(digits);
+                                            //                                                newClientIds.add(digits);
+                                            //                                            }
+                                            //                                            return newClientIds;
                                         },
                                         executorService);
 
