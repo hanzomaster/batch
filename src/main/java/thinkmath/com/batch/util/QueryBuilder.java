@@ -9,7 +9,6 @@ import lombok.experimental.UtilityClass;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 import java.util.function.Function;
 
 @UtilityClass
@@ -61,15 +60,13 @@ public class QueryBuilder {
                         d -> d.field("@timestamp").gte("now-30d/d").lt("now-15d/d")))));
     }
 
-    public Query buildEventQuery(Set<String> clientIds) {
-        List<FieldValue> clients = clientIds.stream().map(FieldValue::of).toList();
-        return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
-                .filter(f -> f.terms(t -> t.field(CLIENT_ID).terms(ts -> ts.value(clients))))));
-    }
-
     public Query buildEventQuery(List<String> clientIds) {
         List<FieldValue> clients = clientIds.stream().map(FieldValue::of).toList();
         return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
                 .filter(f -> f.terms(t -> t.field(CLIENT_ID).terms(ts -> ts.value(clients))))));
+    }
+    public Query buildEventQuery(String clientId) {
+        return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
+                .filter(f -> f.term(t -> t.field(CLIENT_ID).value(clientId)))));
     }
 }

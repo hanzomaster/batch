@@ -1,6 +1,7 @@
 package thinkmath.com.batch;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -10,6 +11,7 @@ import thinkmath.com.batch.util.ElasticsearchExecutor;
 
 import java.util.List;
 
+@Slf4j
 @RequiredArgsConstructor
 @SpringBootApplication
 @EnableScheduling
@@ -30,11 +32,14 @@ public class BatchApplication implements CommandLineRunner {
     public void run(String... args) throws Exception {
         StopWatch stopWatch = new StopWatch();
         stopWatch.start();
-        List<String> queryResult = executor.executeNestedSlicedQueries();
+        List<String> queryResult = executor.executeUseCase();
         stopWatch.stop();
         long time = stopWatch.getTotalTimeMillis();
 
-        System.out.println("Total time: " + time + "ms");
-        System.out.println("Total results: " + queryResult.size());
+        log.info("Total time: {}ms", time);
+        log.info(
+                "Total clients: {} with {} distinct clients",
+                queryResult.size(),
+                queryResult.stream().distinct().count());
     }
 }

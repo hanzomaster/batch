@@ -1,19 +1,17 @@
 package thinkmath.com.batch.util;
 
-import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
-import co.elastic.clients.elasticsearch.core.search.Hit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datafaker.Faker;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StopWatch;
-import thinkmath.com.batch.dto.QueryResult;
+import thinkmath.com.batch.dto.Page;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
@@ -32,113 +30,46 @@ public class ElasticsearchExecutor {
         return client.healthCheck();
     }
 
-    public List<String> executeNestedSlicedQueries() throws IOException, InterruptedException {
-        String clientPitId = null;
-        String eventPitId = null;
-        try {
-            clientPitId = client.openPointInTime(QueryBuilder.CLIENT_INDEX);
-            eventPitId = client.openPointInTime(QueryBuilder.EVENT_INDEX);
-            List<CompletableFuture<List<String>>> allEventsFutures = new ArrayList<>();
-            List<CompletableFuture<Void>> allClientsFutures = new ArrayList<>();
-
-            // Execute first level queries and immediately process their results
-            for (int i = 0; i < QueryBuilder.NUMBER_OF_SLICES; i++) {
-                int clientCurrentSlice = i;
-                String finalClientPitId = clientPitId;
-                String finalEventPitId = eventPitId;
-                CompletableFuture<Void> clientFuture = CompletableFuture.supplyAsync(
-                                () -> {
-                                    try {
-                                        return client.executeClientsQuery(
-                                                finalClientPitId, clientCurrentSlice, QueryBuilder.NUMBER_OF_SLICES);
-                                    } catch (IOException e) {
-                                        throw new CompletionException(e);
-                                    }
-                                    //                                    List<String> clientIds = new ArrayList<>();
-                                    //                                    int listLength = faker.random().nextInt(1,
-                                    // 10);
-                                    //                                    for (int j = 0; j < listLength; j++) {
-                                    //                                        String digits = faker.number().digits(6);
-                                    //                                        System.out.println(digits);
-                                    //                                        clientIds.add(digits);
-                                    //                                    }
-                                    //                                    return clientIds;
-                                },
-                                executorService)
-                        .thenAccept(clientIds -> {
-                            for (int j = 0; j < QueryBuilder.NUMBER_OF_SLICES; j++) {
-                                int eventCurrentSlice = j;
-                                CompletableFuture<List<String>> secondLevelFuture = CompletableFuture.supplyAsync(
-                                        () -> {
-                                            try {
-                                                return client.executeEventsQuery(
-                                                        finalEventPitId,
-                                                        clientIds,
-                                                        eventCurrentSlice,
-                                                        QueryBuilder.NUMBER_OF_SLICES);
-                                            } catch (IOException e) {
-                                                throw new CompletionException(e);
-                                            }
-                                            //                                            List<String> newClientIds =
-                                            // new ArrayList<>();
-                                            //                                            int listLength =
-                                            // faker.random().nextInt(1, 10);
-                                            //                                            for (int k = 0; k <
-                                            // listLength; k++) {
-                                            //                                                String digits =
-                                            // faker.number().digits(6);
-                                            //
-                                            // System.out.println(digits);
-                                            //                                                newClientIds.add(digits);
-                                            //                                            }
-                                            //                                            return newClientIds;
-                                        },
-                                        executorService);
-
-                                synchronized (allEventsFutures) {
-                                    allEventsFutures.add(secondLevelFuture);
+    public List<String> executeUseCase() throws IOException {
+        SearchResponse<Map> clientQuery =
+                client.query(QueryBuilder.CLIENT_INDEX, QueryBuilder.buildClientQuery(), true);
+        long totalClients = Objects.requireNonNull(clientQuery.hits().total()).value();
+        System.out.println(totalClients);
+        List<Page> clientPaginate = paginate(totalClients, QueryBuilder.BATCH_SIZE);
+        List<CompletableFuture<List<String>>> allFutures = new ArrayList<>();
+        for (Page clientPage : clientPaginate) {
+            log.info("Executing client page {}", clientPage.pageNumber());
+            CompletableFuture<List<String>> future = CompletableFuture.supplyAsync(
+                            () -> {
+                                try {
+                                    return client.executeClientsQuery(clientPage.pageNumber(), clientPage.size());
+                                } catch (IOException e) {
+                                    throw new CompletionException(e);
                                 }
-                            }
-                        });
-                allClientsFutures.add(clientFuture);
-            }
-            CompletableFuture.allOf(allClientsFutures.toArray(new CompletableFuture[0]))
-                    .join();
-
-            CompletableFuture<List<String>> finalResults = CompletableFuture.allOf(
-                            allEventsFutures.toArray(new CompletableFuture[0]))
-                    .thenApply(v -> allEventsFutures.stream()
-                            .map(CompletableFuture::join)
-                            .flatMap(List::stream)
-                            .distinct()
-                            .toList());
-
-            return finalResults.join();
-        } finally {
-            if (clientPitId != null) client.closePointInTime(clientPitId);
-            if (eventPitId != null) client.closePointInTime(eventPitId);
-            executorService.shutdown();
+                            },
+                            executorService)
+                    .thenApply(clientIds -> {
+                        try {
+                            return client.executeEventsQueryTerms(clientIds);
+                            //                            return client.executeEventsQuerySingle(clientIds);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+            allFutures.add(future);
         }
+        CompletableFuture.allOf(allFutures.toArray(new CompletableFuture[0])).join();
+        return new ArrayList<>();
     }
 
-    public QueryResult executeQuery(String indexName, Query query, boolean trackTotalHits) {
-        StopWatch stopWatch = new StopWatch();
-        stopWatch.start();
-
-        try {
-            SearchResponse<Map> response = client.query(indexName, query, trackTotalHits);
-            List<Map> hits = response.hits().hits().stream().map(Hit::source).toList();
-
-            stopWatch.stop();
-            long executionTime = stopWatch.getTotalTimeMillis();
-
-            long totalHits =
-                    response.hits().total() != null ? response.hits().total().value() : 0;
-            System.out.println(totalHits + " results in " + executionTime + "ms");
-            return new QueryResult(hits, executionTime, totalHits);
-        } catch (IOException e) {
-            stopWatch.stop();
-            throw new RuntimeException("Failed to execute Elasticsearch query: " + e.getMessage(), e);
+    private static List<Page> paginate(long totalSize, int batchSize) {
+        List<Page> pages = new ArrayList<>();
+        int pageNumber = 0;
+        while (totalSize > 0) {
+            int currentBatchSize = (int) Math.min(batchSize, totalSize);
+            pages.add(new Page(pageNumber++, currentBatchSize));
+            totalSize -= currentBatchSize;
         }
+        return pages;
     }
 }
