@@ -38,3 +38,5 @@ out/
 
 ### TEMPORARY FILES ###
 gradle/
+gradlew
+gradlew.bat
