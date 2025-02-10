@@ -86,23 +86,74 @@ public class QueryBuilder {
 
     public Query buildEventQueryUsecase2(List<String> clientIds) {
         List<FieldValue> clients = clientIds.stream().map(FieldValue::of).toList();
-        return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
-                .filter(f -> f.terms(t -> t.field(CLIENT_ID).terms(ts -> ts.value(clients))))));
+        return Query.of(q -> q.bool(b -> getVietQRNotDisbursed(b)
+                .filter(f -> f.terms(t -> t.field(CLIENT_ID).terms(ts -> ts.value(clients))))
+        ));
+    }
+
+    private static BoolQuery.Builder getVietQRNotDisbursed(BoolQuery.Builder b) {
+        return b
+                .must(m -> m.bool(innerBool -> innerBool
+                        .must(m1 -> m1.bool(b1 -> b1
+                                .must(mt -> mt.term(t -> t.field("event_name").value("ins_vay_giaingan_success")))
+                                .must(mt -> mt.range(r -> r.date(DateRangeQuery.of(d -> d.field("@timestamp").lt("now-30d")))))
+                                .must(mt -> mt.match(m2 -> m2.field("ins_vay_success_term").query("tháng")))
+                                .must(mt -> mt.match(m2 -> m2.field("ins_vay_success_type").query("Tín dụng VietQR")))
+                        ))
+                        .must(m1 -> m1.bool(b1 -> b1
+                                .must(mt -> mt.term(t -> t.field("event_name").value("ins_vay_dangky_success")))
+                                .must(mt -> mt.range(r -> r.date(DateRangeQuery.of(d -> d.field("@timestamp").gte("now-30d")))))
+                                .must(mt -> mt.match(m2 -> m2.field("ins_vay_success_type").query("Tín dụng VietQR")))
+                                .must(mt -> mt.match(m2 -> m2.field("ins_vay_success_type").query("tháng")))
+                        ))
+                ))
+                .should(s -> s.bool(b1 -> b1
+                        .must(mt -> mt.term(t -> t.field("event_name").value("push_delivered")))
+                        .must(mt -> mt.range(r -> r.date(DateRangeQuery.of(d -> d.field("@timestamp").gte("now-30d")))))
+                        .must(mt -> mt.term(t -> t.field("e_journey_id").value("1861")))
+                ))
+                .should(s -> s.bool(b1 -> b1
+                        .must(mt -> mt.term(t -> t.field("event_name").value("push_delivered")))
+                        .must(mt -> mt.range(r -> r.date(DateRangeQuery.of(d -> d.field("@timestamp").gte("now-30d")))))
+                        .must(mt -> mt.term(t -> t.field("e_journey_id").value("1865")))
+                ))
+                .minimumShouldMatch(String.valueOf(1));
     }
 
     public Query buildEventQueryUsecase2(String clientId) {
-        return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
+        return Query.of(q -> q.bool(b -> getVietQRNotDisbursed(b)
                 .filter(f -> f.term(t -> t.field(CLIENT_ID).value(clientId)))));
     }
 
     public Query buildEventQueryUsecase3(List<String> clientIds) {
         List<FieldValue> clients = clientIds.stream().map(FieldValue::of).toList();
-        return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
-                .filter(f -> f.terms(t -> t.field(CLIENT_ID).terms(ts -> ts.value(clients))))));
+        return Query.of(q -> q.bool(b -> getNotYetInstallmentPayment(b)
+                .filter(f -> f.terms(t -> t.field(CLIENT_ID).terms(ts -> ts.value(clients))))
+        ));
+    }
+
+    private static BoolQuery.Builder getNotYetInstallmentPayment(BoolQuery.Builder b) {
+            return b
+                .must(m -> m.bool(innerBool -> innerBool
+                        // Transaction conditions
+                        .must(m1 -> m1.bool(b1 -> b1
+                                .must(mt -> mt.term(t -> t.field("event_name").value("ins_the_giaodich")))
+                                .must(mt -> mt.range(r -> r.date(DateRangeQuery.of(d -> d.field("@timestamp").gte("now-1d")))))
+                                .must(mt -> mt.range(r -> r.date(DateRangeQuery.of(d -> d.field("@timstamp").gte("2500000")))))
+                                .must(mt -> mt.range(r -> r.date(DateRangeQuery.of(d -> d.field("@timestamp").lte("3000000")))))
+                        ))
+                        // Credit card attribute
+                        .must(m1 -> m1.match(t -> t.field("a_c_ins_credit_card").query("True")))
+                        // No installment success in last 30 days
+                        .must(m1 -> m1.bool(b1 -> b1
+                                .must(mt -> mt.term(t -> t.field("event_name").value("ins_card_tragop_success")))
+                                .must(mt -> mt.range(r -> r.date(DateRangeQuery.of(d -> d.field("@timestamp").lt("now-30d")))))
+                        ))
+                ));
     }
 
     public Query buildEventQueryUsecase3(String clientId) {
-        return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
+        return Query.of(q -> q.bool(b -> getNotYetInstallmentPayment(b)
                 .filter(f -> f.term(t -> t.field(CLIENT_ID).value(clientId)))));
     }
 }

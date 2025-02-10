@@ -158,7 +158,7 @@ public class ElasticsearchService implements AutoCloseable {
         while (true) {
             SearchRequest.Builder builder = new SearchRequest.Builder()
                     .index(QueryBuilder.EVENT_INDEX)
-                    .query(QueryBuilder.buildEventQueryUsecase1(clientIds))
+                    .query(QueryBuilder.buildEventQueryUsecase2(clientIds))
                     .source(source -> source.filter(filter -> filter.includes(QueryBuilder.CLIENT_ID, "@timestamp")))
                     .sort(sort -> sort.field(field -> field.field("@timestamp")));
             if (searchAfter != null) {
@@ -192,7 +192,7 @@ public class ElasticsearchService implements AutoCloseable {
         for (String clientId : clientIds) {
             SearchRequest.Builder builder = new SearchRequest.Builder()
                     .index(QueryBuilder.EVENT_INDEX)
-                    .query(QueryBuilder.buildEventQueryUsecase1(clientId));
+                    .query(QueryBuilder.buildEventQueryUsecase2(clientId));
             SearchResponse<Map> response = client.search(builder.build(), Map.class);
             if (response.hits().hits().isEmpty()) {
                 continue;
