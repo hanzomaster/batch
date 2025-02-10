@@ -62,9 +62,7 @@ public class ElasticsearchService implements AutoCloseable {
     private CredentialsProvider credentialsProvider() {
         CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
         credentialsProvider.setCredentials(
-                AuthScope.ANY,
-                new UsernamePasswordCredentials(
-                        "elastic", "CJQ+govn44V*D-sNeyHp"));
+                AuthScope.ANY, new UsernamePasswordCredentials("elastic", "CJQ+govn44V*D-sNeyHp"));
         return credentialsProvider;
     }
 
@@ -116,39 +114,57 @@ public class ElasticsearchService implements AutoCloseable {
     }
 
     // TODO: Execute this code
-    public List<String> executeQueries(int pageNumber, int pageSize, int usecaseNumber) throws IOException {
-        List<String> clientIds = executeClientsQuery(pageNumber, pageSize, usecaseNumber);
+    public List<String> executeQueries(
+            int pageNumber, int pageSize, int usecaseNumber, String clientPitId, String eventPitId) throws IOException {
+        List<String> clientIds = executeClientsQuery(pageNumber, pageSize, usecaseNumber, clientPitId);
         // return executeEventsQuerySingle(clientIds, usecaseNumber);
-        return executeEventsQueryTerms(clientIds);
+        return executeEventsQueryTerms(clientIds, eventPitId);
     }
 
-    private List<String> executeClientsQuery(int pageNumber, int pageSize, int usecaseNumber) throws IOException {
+    private List<String> executeClientsQuery(int pageNumber, int pageSize, int usecaseNumber, String clientPitId)
+            throws IOException {
         log.info("Start executing clients query from {} with {} size", pageNumber * pageSize, pageSize);
         StopWatch stopwatch = new StopWatch("executeQueries");
-
-        SearchRequest.Builder builder = new SearchRequest.Builder()
-                .index(QueryBuilder.CLIENT_INDEX)
-                .from(pageNumber * pageSize)
-                .size(pageSize)
-                .query(QueryBuilder.buildClientQuery(usecaseNumber))
-                .source(source ->
-                        source.filter(filter -> filter.includes(QueryBuilder.CLIENT_ID, "attributes.a_created_date")))
-                .sort(sort -> sort.field(field -> field.field("attributes.a_created_date")));
+        List<String> clientIds = new ArrayList<>();
+        List<FieldValue> searchAfter = null;
+        int count = 0;
+        boolean infiniteLoop = (pageNumber == -1);
 
         stopwatch.start("Client query from " + pageNumber + " with size " + pageSize);
+        while (infiniteLoop || count++ < pageNumber) {
+            SearchRequest.Builder builder = new SearchRequest.Builder()
+                    .pit(pit -> pit.id(clientPitId).keepAlive(KEEP_ALIVE))
+                    .query(QueryBuilder.buildClientQuery(usecaseNumber))
+                    .source(source -> source.filter(
+                            filter -> filter.includes(QueryBuilder.CLIENT_ID, "attributes.a_created_date")))
+                    .sort(sort -> sort.field(field -> field.field("attributes.a_created_date")));
+            if (searchAfter != null) {
+                builder = builder.searchAfter(searchAfter);
+            }
 
-        SearchResponse<Map> response = client.search(builder.build(), Map.class);
-        List<String> clientIds = response.hits().hits().stream()
-                .map(h -> ((String) Objects.requireNonNull(h.source()).get("client_id")))
-                .toList();
+            SearchResponse<Map> response = client.search(builder.build(), Map.class);
+            List<Hit<Map>> hits = response.hits().hits();
+            if (hits.isEmpty()) break;
+
+            clientIds.addAll(hits.stream()
+                    .map(h -> ((String) Objects.requireNonNull(h.source()).get("client_id")))
+                    .toList());
+
+            searchAfter = hits.getLast().sort();
+        }
 
         stopwatch.stop();
-        log.info("Client query from {} with size {} took {}ms", pageNumber, pageSize, stopwatch.getTotalTimeMillis());
+        log.info(
+                "Client query from {} with size {} took {}ms ~ {}s",
+                pageNumber,
+                pageSize,
+                stopwatch.getTotalTimeMillis(),
+                stopwatch.getTotalTimeSeconds());
 
         return clientIds;
     }
 
-    public List<String> executeEventsQueryTerms(List<String> clientIds) throws IOException {
+    public List<String> executeEventsQueryTerms(List<String> clientIds, String eventPitId) throws IOException {
         log.info("Start executing events query terms with {} client ids", clientIds.size());
         StopWatch stopwatch = new StopWatch();
         List<FieldValue> searchAfter = null;
@@ -157,7 +173,7 @@ public class ElasticsearchService implements AutoCloseable {
 
         while (true) {
             SearchRequest.Builder builder = new SearchRequest.Builder()
-                    .index(QueryBuilder.EVENT_INDEX)
+                    .pit(pit -> pit.id(eventPitId).keepAlive(KEEP_ALIVE))
                     .query(QueryBuilder.buildEventQueryUsecase1(clientIds))
                     .source(source -> source.filter(filter -> filter.includes(QueryBuilder.CLIENT_ID, "@timestamp")))
                     .sort(sort -> sort.field(field -> field.field("@timestamp")));
@@ -178,9 +194,18 @@ public class ElasticsearchService implements AutoCloseable {
         }
 
         stopwatch.stop();
-        log.info("Event query with terms took {}ms for {} clients", stopwatch.getTotalTimeMillis(), clientIds.size());
+        log.info(
+                "Event query with terms took {}ms ~ {}s for {} clients",
+                stopwatch.getTotalTimeMillis(),
+                stopwatch.getTotalTimeSeconds(),
+                clientIds.size());
 
         return resultIds;
+    }
+
+    public String getPitId(String clientIndex) throws IOException {
+        return client.openPointInTime(b -> b.index(clientIndex).keepAlive(KEEP_ALIVE))
+                .id();
     }
 
     public List<String> executeEventsQuerySingle(List<String> clientIds) throws IOException {
@@ -202,8 +227,9 @@ public class ElasticsearchService implements AutoCloseable {
 
         stopwatch.stop();
         log.info(
-                "Event query with a single client at a time took {}ms for {} clients",
+                "Event query with a single client at a time took {}ms ~ {}s for {} clients",
                 stopwatch.getTotalTimeMillis(),
+                stopwatch.getTotalTimeSeconds(),
                 clientIds.size());
 
         return resultIds;

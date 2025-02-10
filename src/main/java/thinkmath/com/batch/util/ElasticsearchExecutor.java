@@ -1,7 +1,9 @@
 package thinkmath.com.batch.util;
 
 import co.elastic.clients.elasticsearch.core.SearchResponse;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import thinkmath.com.batch.dto.Page;
@@ -16,12 +18,13 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-@Slf4j
+@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @RequiredArgsConstructor
+@Slf4j
 @Component
 public class ElasticsearchExecutor {
-    private final ElasticsearchService client;
-    private final ExecutorService executorService = Executors.newFixedThreadPool(QueryBuilder.FIXED_THREAD_POOL);
+    ElasticsearchService client;
+    ExecutorService executorService = Executors.newFixedThreadPool(QueryBuilder.FIXED_THREAD_POOL);
 
     public boolean healthCheck() throws IOException {
         return client.healthCheck();
@@ -33,13 +36,15 @@ public class ElasticsearchExecutor {
 
         long totalClients = Objects.requireNonNull(clientQuery.hits().total()).value();
         List<Page> clientPaginate = paginate(totalClients, QueryBuilder.BATCH_SIZE);
-
+        String clientPitId = client.getPitId(QueryBuilder.CLIENT_INDEX);
+        String eventPitId = client.getPitId(QueryBuilder.EVENT_INDEX);
         List<CompletableFuture<List<String>>> allFutures = new ArrayList<>();
         for (Page clientPage : clientPaginate) {
             CompletableFuture<List<String>> future = CompletableFuture.supplyAsync(
                     () -> {
                         try {
-                            return client.executeQueries(clientPage.pageNumber(), clientPage.size(), usecaseNumber);
+                            return client.executeQueries(
+                                    clientPage.pageNumber(), clientPage.size(), usecaseNumber, clientPitId, eventPitId);
                         } catch (IOException e) {
                             throw new CompletionException(e);
                         }
