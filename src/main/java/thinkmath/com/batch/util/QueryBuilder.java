@@ -17,9 +17,26 @@ public class QueryBuilder {
     public final String CLIENT_INDEX = "clients-*";
     public final String EVENT_INDEX = "events-*";
     public final String CLIENT_ID = "client_id";
-    public final int NUMBER_OF_SLICES = 5;
+    public static final int FIXED_THREAD_POOL = 3;
 
-    public Query buildClientQuery() {
+    public Query buildClientQuery(int usecaseNumber) {
+        return switch (usecaseNumber) {
+            case 1 -> buildClientQueryUsecase1();
+            case 2 -> buildClientQueryUsecase2();
+            case 3 -> buildClientQueryUsecase3();
+            default -> throw new IllegalStateException("This use case doesn't have a query: " + usecaseNumber);
+        };
+    }
+
+    public Query buildClientQueryUsecase1() {
+        return Query.of(excludeCertainCustomers());
+    }
+
+    public Query buildClientQueryUsecase2() {
+        return Query.of(excludeCertainCustomers());
+    }
+
+    public Query buildClientQueryUsecase3() {
         return Query.of(excludeCertainCustomers());
     }
 
@@ -46,8 +63,10 @@ public class QueryBuilder {
                                         FieldValue.of("15")))))))));
     }
 
-    public Query buildEventQuery() {
-        return Query.of(q -> q.bool(QueryBuilder::getEventLoginPast30Days));
+    public Query buildEventQueryUsecase1(List<String> clientIds) {
+        List<FieldValue> clients = clientIds.stream().map(FieldValue::of).toList();
+        return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
+                .filter(f -> f.terms(t -> t.field(CLIENT_ID).terms(ts -> ts.value(clients))))));
     }
 
     public BoolQuery.Builder getEventLoginPast30Days(BoolQuery.Builder b) {
@@ -60,12 +79,29 @@ public class QueryBuilder {
                         d -> d.field("@timestamp").gte("now-30d/d").lt("now-15d/d")))));
     }
 
-    public Query buildEventQuery(List<String> clientIds) {
+    public Query buildEventQueryUsecase1(String clientId) {
+        return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
+                .filter(f -> f.term(t -> t.field(CLIENT_ID).value(clientId)))));
+    }
+
+    public Query buildEventQueryUsecase2(List<String> clientIds) {
         List<FieldValue> clients = clientIds.stream().map(FieldValue::of).toList();
         return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
                 .filter(f -> f.terms(t -> t.field(CLIENT_ID).terms(ts -> ts.value(clients))))));
     }
-    public Query buildEventQuery(String clientId) {
+
+    public Query buildEventQueryUsecase2(String clientId) {
+        return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
+                .filter(f -> f.term(t -> t.field(CLIENT_ID).value(clientId)))));
+    }
+
+    public Query buildEventQueryUsecase3(List<String> clientIds) {
+        List<FieldValue> clients = clientIds.stream().map(FieldValue::of).toList();
+        return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
+                .filter(f -> f.terms(t -> t.field(CLIENT_ID).terms(ts -> ts.value(clients))))));
+    }
+
+    public Query buildEventQueryUsecase3(String clientId) {
         return Query.of(q -> q.bool(b -> getEventLoginPast30Days(b)
                 .filter(f -> f.term(t -> t.field(CLIENT_ID).value(clientId)))));
     }

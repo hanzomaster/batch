@@ -40,7 +40,7 @@ public class ElasticsearchService implements AutoCloseable {
     private final ElasticsearchClient client;
 
     public ElasticsearchService() {
-        RestClient restClient = RestClient.builder(new HttpHost("127.0.0.1", 9200, "https"))
+        RestClient restClient = RestClient.builder(new HttpHost("localhost", 9200, "https"))
                 .setHttpClientConfigCallback(httpAsyncClientBuilder -> {
                     try {
                         return httpAsyncClientBuilder
@@ -62,7 +62,9 @@ public class ElasticsearchService implements AutoCloseable {
     private CredentialsProvider credentialsProvider() {
         CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
         credentialsProvider.setCredentials(
-                AuthScope.ANY, new UsernamePasswordCredentials("elastic", "CJQ+govn44V*D-sNeyHp"));
+                AuthScope.ANY,
+                new UsernamePasswordCredentials(
+                        "elastic", "CJQ+govn44V*D-sNeyHp"));
         return credentialsProvider;
     }
 
@@ -96,11 +98,14 @@ public class ElasticsearchService implements AutoCloseable {
 
     public SearchResponse<Map> query(String index, Query query, boolean trackTotalHits) throws IOException {
         if (trackTotalHits) {
-            if (query == null)
+            if (query == null) {
                 return client.search(s -> s.index(index).trackTotalHits(tth -> tth.enabled(true)), Map.class);
+            }
             return client.search(s -> s.index(index).query(query).trackTotalHits(tth -> tth.enabled(true)), Map.class);
         } else {
-            if (query == null) return client.search(s -> s.index(index), Map.class);
+            if (query == null) {
+                return client.search(s -> s.index(index), Map.class);
+            }
             return client.search(s -> s.index(index).query(query), Map.class);
         }
     }
@@ -110,67 +115,97 @@ public class ElasticsearchService implements AutoCloseable {
         client.close();
     }
 
-    public List<String> executeClientsQuery(int from, int size) throws IOException {
-        StopWatch stopwatch = new StopWatch();
+    // TODO: Execute this code
+    public List<String> executeQueries(int pageNumber, int pageSize, int usecaseNumber) throws IOException {
+        List<String> clientIds = executeClientsQuery(pageNumber, pageSize, usecaseNumber);
+        // return executeEventsQuerySingle(clientIds, usecaseNumber);
+        return executeEventsQueryTerms(clientIds);
+    }
+
+    private List<String> executeClientsQuery(int pageNumber, int pageSize, int usecaseNumber) throws IOException {
+        log.info("Start executing clients query from {} with {} size", pageNumber * pageSize, pageSize);
+        StopWatch stopwatch = new StopWatch("executeQueries");
+
         SearchRequest.Builder builder = new SearchRequest.Builder()
                 .index(QueryBuilder.CLIENT_INDEX)
-                .from(from)
-                .size(size)
-                .query(QueryBuilder.buildClientQuery())
+                .from(pageNumber * pageSize)
+                .size(pageSize)
+                .query(QueryBuilder.buildClientQuery(usecaseNumber))
                 .source(source ->
                         source.filter(filter -> filter.includes(QueryBuilder.CLIENT_ID, "attributes.a_created_date")))
                 .sort(sort -> sort.field(field -> field.field("attributes.a_created_date")));
-        stopwatch.start("Client query from " + from + " with size " + size);
+
+        stopwatch.start("Client query from " + pageNumber + " with size " + pageSize);
+
         SearchResponse<Map> response = client.search(builder.build(), Map.class);
         List<String> clientIds = response.hits().hits().stream()
                 .map(h -> ((String) Objects.requireNonNull(h.source()).get("client_id")))
                 .toList();
+
         stopwatch.stop();
-        log.info("Client query from {} with size {} took {}ms", from, size, stopwatch.getTotalTimeMillis());
+        log.info("Client query from {} with size {} took {}ms", pageNumber, pageSize, stopwatch.getTotalTimeMillis());
+
         return clientIds;
     }
 
     public List<String> executeEventsQueryTerms(List<String> clientIds) throws IOException {
+        log.info("Start executing events query terms with {} client ids", clientIds.size());
         StopWatch stopwatch = new StopWatch();
         List<FieldValue> searchAfter = null;
         List<String> resultIds = new ArrayList<>();
         stopwatch.start("Event query with terms");
+
         while (true) {
             SearchRequest.Builder builder = new SearchRequest.Builder()
                     .index(QueryBuilder.EVENT_INDEX)
-                    .query(QueryBuilder.buildEventQuery(clientIds))
+                    .query(QueryBuilder.buildEventQueryUsecase1(clientIds))
                     .source(source -> source.filter(filter -> filter.includes(QueryBuilder.CLIENT_ID, "@timestamp")))
                     .sort(sort -> sort.field(field -> field.field("@timestamp")));
-            if (searchAfter != null) builder = builder.searchAfter(searchAfter);
+            if (searchAfter != null) {
+                builder = builder.searchAfter(searchAfter);
+            }
 
             SearchResponse<Map> response = client.search(builder.build(), Map.class);
             List<Hit<Map>> hits = response.hits().hits();
-            if (hits.isEmpty()) break;
+            if (hits.isEmpty()) {
+                break;
+            }
             resultIds.addAll(hits.stream()
                     .map(h -> ((String) Objects.requireNonNull(h.source()).get("client_id")))
                     .toList());
 
             searchAfter = hits.getLast().sort();
         }
+
         stopwatch.stop();
-        log.info("Event query with terms took {}ms", stopwatch.getTotalTimeMillis());
+        log.info("Event query with terms took {}ms for {} clients", stopwatch.getTotalTimeMillis(), clientIds.size());
+
         return resultIds;
     }
 
     public List<String> executeEventsQuerySingle(List<String> clientIds) throws IOException {
+        log.info("Start executing events query single with {} client ids", clientIds.size());
         StopWatch stopwatch = new StopWatch();
         stopwatch.start("Event query with a single client at a time");
+
         List<String> resultIds = new ArrayList<>();
         for (String clientId : clientIds) {
             SearchRequest.Builder builder = new SearchRequest.Builder()
                     .index(QueryBuilder.EVENT_INDEX)
-                    .query(QueryBuilder.buildEventQuery(clientId));
+                    .query(QueryBuilder.buildEventQueryUsecase1(clientId));
             SearchResponse<Map> response = client.search(builder.build(), Map.class);
-            if (response.hits().hits().isEmpty()) continue;
+            if (response.hits().hits().isEmpty()) {
+                continue;
+            }
             resultIds.add(clientId);
         }
+
         stopwatch.stop();
-        log.info("Event query with a single client at a time took {}ms", stopwatch.getTotalTimeMillis());
+        log.info(
+                "Event query with a single client at a time took {}ms for {} clients",
+                stopwatch.getTotalTimeMillis(),
+                clientIds.size());
+
         return resultIds;
     }
 }

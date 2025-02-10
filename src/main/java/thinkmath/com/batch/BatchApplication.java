@@ -32,7 +32,9 @@ public class BatchApplication implements CommandLineRunner {
     public void run(String... args) throws Exception {
         StopWatch stopWatch = new StopWatch();
         stopWatch.start();
-        List<String> queryResult = executor.executeUseCase();
+
+        int usecaseNumber = 1;
+        List<String> queryResult = executor.executeUseCase(usecaseNumber);
         stopWatch.stop();
         long time = stopWatch.getTotalTimeMillis();
 
