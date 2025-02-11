@@ -33,11 +33,13 @@ public class QueryBuilder {
     }
 
     public Query buildClientQueryUsecase2() {
-        return Query.of(excludeCertainCustomers());
+        return Query.of(q -> q.bool(b -> b.filter(QueryBuilder::excludeVipCustomer)));
     }
 
     public Query buildClientQueryUsecase3() {
-        return Query.of(excludeCertainCustomers());
+        return Query.of(q -> q.bool(b -> b.must(m -> m.bool(innerBool -> innerBool
+                .must(mt -> mt.match(t -> t.field("attributes.a_c_ins_credit_card").query("true")))
+        )).filter(QueryBuilder::excludeVipCustomer)));
     }
 
     public Function<Query.Builder, ObjectBuilder<Query>> excludeCertainCustomers() {
@@ -47,20 +49,24 @@ public class QueryBuilder {
                         .should(s -> s.bool(
                                 b2 -> b2.mustNot(mn -> mn.exists(e -> e.field("attributes.a_c_ins_loyalty_point")))))
                         .minimumShouldMatch("1")))
-                .filter(m -> m.bool(innerBool -> innerBool
-                        .mustNot(mn -> mn.term(
-                                t -> t.field("attributes.a_custom_segment_id").value("240")))
-                        .mustNot(mn -> mn.term(
-                                t -> t.field("attributes.a_custom_segment_id").value("981")))
-                        .mustNot(mn -> mn.terms(t -> t.field("attributes.a_c_ins_customer_level")
-                                .terms(terms -> terms.value(Arrays.asList(
-                                        FieldValue.of("9"),
-                                        FieldValue.of("10"),
-                                        FieldValue.of("11"),
-                                        FieldValue.of("12"),
-                                        FieldValue.of("13"),
-                                        FieldValue.of("14"),
-                                        FieldValue.of("15")))))))));
+                .filter(QueryBuilder::excludeVipCustomer));
+    }
+
+    private static ObjectBuilder<Query> excludeVipCustomer(Query.Builder m) {
+        return m.bool(innerBool -> innerBool
+                .mustNot(mn -> mn.term(
+                        t -> t.field("attributes.a_custom_segment_id").value("240")))
+                .mustNot(mn -> mn.term(
+                        t -> t.field("attributes.a_custom_segment_id").value("981")))
+                .mustNot(mn -> mn.terms(t -> t.field("attributes.a_c_ins_customer_level")
+                        .terms(terms -> terms.value(Arrays.asList(
+                                FieldValue.of("9"),
+                                FieldValue.of("10"),
+                                FieldValue.of("11"),
+                                FieldValue.of("12"),
+                                FieldValue.of("13"),
+                                FieldValue.of("14"),
+                                FieldValue.of("15")))))));
     }
 
     public Query buildEventQueryUsecase1(List<String> clientIds) {
